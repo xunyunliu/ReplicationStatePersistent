@@ -16,41 +16,41 @@ import org.apache.curator.retry.RetryNTimes;
 import org.apache.storm.utils.Utils;
 
 public class StormSignalConnection extends AbstractSignalConnection {
-    private static final Logger LOG = LoggerFactory.getLogger(StormSignalConnection.class);
+	private static final Logger LOG = LoggerFactory.getLogger(StormSignalConnection.class);
 
-    public StormSignalConnection(String name, SignalListener listener) {
-        this.name = name;
-        this.listener = listener;
-    }
+	public StormSignalConnection(String name, SignalListener listener) {
+		this.name = name;
+		this.listener = listener;
+	}
+	
+	@SuppressWarnings("rawtypes")
+	public void init(Map conf) throws Exception {
+		String connectString = zkHosts(conf);
+		int retryCount = Utils.getInt(conf.get("storm.zookeeper.retry.times"));
+		int retryInterval = Utils.getInt(conf.get("storm.zookeeper.retry.interval"));
 
-    @SuppressWarnings("rawtypes")
-    public void init(Map conf) throws Exception {
-        String connectString = zkHosts(conf);
-        int retryCount = Utils.getInt(conf.get("storm.zookeeper.retry.times"));
-        int retryInterval = Utils.getInt(conf.get("storm.zookeeper.retry.interval"));
+		this.client = CuratorFrameworkFactory.builder().namespace(namespace).connectString(connectString)
+				.retryPolicy(new RetryNTimes(retryCount, retryInterval)).build();
+		this.client.start();
 
-        this.client = CuratorFrameworkFactory.builder().namespace(namespace).connectString(connectString)
-                .retryPolicy(new RetryNTimes(retryCount, retryInterval)).build();
-        this.client.start();
+		super.initWatcher();
+	}
 
-        super.initWatcher();
-    }
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	private static String zkHosts(Map conf) {
+		int zkPort = Utils.getInt(conf.get("storm.zookeeper.port"));
+		List<String> zkServers = (List<String>) conf.get("storm.zookeeper.servers");
 
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static String zkHosts(Map conf) {
-        int zkPort = Utils.getInt(conf.get("storm.zookeeper.port"));
-        List<String> zkServers = (List<String>) conf.get("storm.zookeeper.servers");
-
-        Iterator<String> it = zkServers.iterator();
-        StringBuffer sb = new StringBuffer();
-        while (it.hasNext()) {
-            sb.append(it.next());
-            sb.append(":");
-            sb.append(zkPort);
-            if (it.hasNext()) {
-                sb.append(",");
-            }
-        }
-        return sb.toString();
-    }
+		Iterator<String> it = zkServers.iterator();
+		StringBuffer sb = new StringBuffer();
+		while (it.hasNext()) {
+			sb.append(it.next());
+			sb.append(":");
+			sb.append(zkPort);
+			if (it.hasNext()) {
+				sb.append(",");
+			}
+		}
+		return sb.toString();
+	}
 }

@@ -46,6 +46,73 @@
         <directory>test/resources</directory>
       </testResource>
     </testResources>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.eclipse.m2e</groupId>
+          <artifactId>lifecycle-mapping</artifactId>
+          <version>1.0.0</version>
+          <configuration>
+            <lifecycleMappingMetadata>
+              <pluginExecutions>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>com.theoryinpractise</groupId>
+                    <artifactId>clojure-maven-plugin</artifactId>
+                    <versionRange>[1.7.1,)</versionRange>
+                    <goals>
+                      <goal>compile</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore />
+                  </action>
+                </pluginExecution>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <versionRange>[1.7,)</versionRange>
+                    <goals>
+                      <goal>run</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore />
+                  </action>
+                </pluginExecution>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.apache.storm</groupId>
+                    <artifactId>storm-maven-plugins</artifactId>
+                    <versionRange>[1.0.2,)</versionRange>
+                    <goals>
+                      <goal>version-info</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore />
+                  </action>
+                </pluginExecution>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <versionRange>[0.7.2.201409121644,)</versionRange>
+                    <goals>
+                      <goal>prepare-agent</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore />
+                  </action>
+                </pluginExecution>
+              </pluginExecutions>
+            </lifecycleMappingMetadata>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <plugin>
         <groupId>com.theoryinpractise</groupId>
@@ -727,7 +794,8 @@
               <executable>sh</executable>
               <arguments>
                 <argument>-c</argument>
-                <argument>mkdir -p ${project.build.directory}/; cp -rufv ${basedir}/src/native/ ${project.build.directory}/</argument>
+                <argument>mkdir -p ${project.build.directory}/; cp -rufv
+									${basedir}/src/native/ ${project.build.directory}/</argument>
               </arguments>
             </configuration>
           </plugin>
@@ -761,7 +829,8 @@
               <configureEnvironment>
                 <property>
                   <name>CFLAGS</name>
-                  <value>-DEXEC_CONF_DIR=${worker-launcher.conf.dir} ${worker-launcher.additional_cflags}</value>
+                  <value>-DEXEC_CONF_DIR=${worker-launcher.conf.dir}
+										${worker-launcher.additional_cflags}</value>
                 </property>
               </configureEnvironment>
               <configureWorkDir>${project.build.directory}/native/worker-launcher</configureWorkDir>
