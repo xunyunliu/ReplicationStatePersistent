@@ -11,18 +11,21 @@ import org.apache.curator.framework.CuratorFramework;
 public abstract class AbstractSignalConnection implements Watcher {
 	private static final Logger LOG = LoggerFactory.getLogger(AbstractSignalConnection.class);
 
-	// signal name space
+	// signal namespace
 	static final String namespace = "replication-signals";
 	// connection name
 	protected String name;
 	// client used for manipulating zookeeper
 	protected CuratorFramework client;
-	// client used for incurring some actions upon any change monitored from
+	// client used for incurring some actions upon changes monitored from
 	// zookeeper
 	protected SignalListener listener;
 
+	/**
+	 * Initialize itself as a CuratorFramwork client watcher 
+	 * @throws Exception
+	 */
 	protected void initWatcher() throws Exception {
-
 		// create base path if necessary
 		Stat stat = this.client.checkExists().usingWatcher(this).forPath("/" + this.name);
 		if (stat == null) {
@@ -39,7 +42,7 @@ public abstract class AbstractSignalConnection implements Watcher {
 		} catch (Exception ex) {
 			LOG.error("Error renewing watch.", ex);
 		}
-
+		
 		switch (we.getType()) {
 		case NodeCreated:
 			LOG.debug("Node replication created.");
