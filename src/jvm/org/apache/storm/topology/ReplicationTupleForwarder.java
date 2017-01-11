@@ -5,7 +5,6 @@ import java.util.Map;
 
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
-import org.apache.storm.topology.BaseStatefulBoltExecutor.AnchoringOutputCollector;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.slf4j.Logger;
@@ -49,13 +48,27 @@ public class ReplicationTupleForwarder extends BaseReplicationBoltExecutor {
 	public Map<String, Object> getComponentConfiguration() {
 		return _bolt.getComponentConfiguration();
 	}
-
-	@Override
+	
+    /**
+     * Hands off tuple to the wrapped bolt to execute.
+     *
+     * <p>
+     * Right now tuples continue to get forwarded while waiting for checkpoints to arrive on other streams
+     * after checkpoint arrives on one of the streams. This can cause duplicates but still at least once.
+     * </p>
+     *
+     * @param input the input tuple
+     */
 	protected void handleTuple(Tuple input) {
-
+		_bolt.execute(input);
 	}
 
-	@Override
+	 /**
+     * Forwards the replication signal to downstream.
+     *
+     * @param input  the replication tuple
+     * @param txid   the transaction id.
+     */
 	protected void handleReplication(Tuple input, long txid) {
 		_collector.emit(REPLICATION_STREAM_ID, input, new Values(txid));
 		_collector.ack(input);

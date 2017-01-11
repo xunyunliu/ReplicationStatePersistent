@@ -3,8 +3,10 @@ package org.apache.storm.topology;
 import static org.apache.storm.spout.ReplicationSpout.REPLICATION_STREAM_ID;
 import static org.apache.storm.spout.ReplicationSpout.REPLICATION_FLELD_ID;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.storm.generated.GlobalStreamId;
 import org.apache.storm.spout.ReplicationSpout;
@@ -16,34 +18,25 @@ import org.apache.storm.tuple.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Base class that abstracts the common logic for executing bolts in a stateful
+ * topology with replication.
+ * 
+ * @author xunyunliu
+ *
+ */
 public abstract class BaseReplicationBoltExecutor implements IRichBolt {
 
 	private static final Logger LOG = LoggerFactory.getLogger(BaseReplicationBoltExecutor.class);
+	private Set<Long> _transactionProcessed;
 	protected OutputCollector _collector;
-	private final Map<Long, Integer> _transactionRequestCount;
-	private int _replicationInputTaskCount;
 
 	public BaseReplicationBoltExecutor() {
-		_transactionRequestCount = new HashMap<>();
+		_transactionProcessed = new HashSet<Long>();
 	}
 
 	protected void init(TopologyContext context, OutputCollector collector) {
 		_collector = collector;
-		_replicationInputTaskCount = getReplicationInputTaskCount(context);
-	}
-
-	/**
-	 * returns the total number of input replication streams across all input
-	 * tasks to this component.
-	 */
-	private int getReplicationInputTaskCount(TopologyContext context) {
-		int count = 0;
-		for (GlobalStreamId inputStream : context.getThisSources().keySet()) {
-			if (REPLICATION_STREAM_ID.equals(inputStream.get_streamId())) {
-				count += context.getComponentTasks(inputStream.get_componentId()).size();
-			}
-		}
-		return count;
 	}
 
 	@Override
@@ -58,37 +51,29 @@ public abstract class BaseReplicationBoltExecutor implements IRichBolt {
 	private void processReplication(Tuple input) {
 		long txid = input.getLongByField(REPLICATION_FLELD_ID);
 		if (shouldProcessTransaction(txid)) {
-			LOG.debug("Processing replication message, txid {}", txid);
+			LOG.debug("Processing replication signal, txid {}", txid);
 			try {
 				// need to ack this input;
 				handleReplication(input, txid);
 			} catch (Throwable th) {
-				LOG.error("Got error while processing replication tuple", th);
+				LOG.error("Got error while processing replication signal", th);
 				_collector.fail(input);
 				_collector.reportError(th);
 			}
 		} else {
-			LOG.debug("Waiting for txid {} from all input tasks. replicationInputTaskCount {}, "
-					+ "transactionRequestCount {}", txid, _replicationInputTaskCount, _transactionRequestCount);
+			LOG.debug("This txid {} has already been processed", txid);
 			_collector.ack(input);
 		}
 
 	}
 
 	private boolean shouldProcessTransaction(long txid) {
-		Long request = new Long(txid);
-		Integer count;
-		if ((count = _transactionRequestCount.get(request)) == null) {
-			_transactionRequestCount.put(request, 1);
-			count = 1;
-		} else {
-			_transactionRequestCount.put(request, ++count);
-		}
-		if (count == _replicationInputTaskCount) {
-			_transactionRequestCount.remove(request);
+		if (_transactionProcessed.contains(txid))
+			return false;
+		else {
+			_transactionProcessed.add(txid);
 			return true;
 		}
-		return false;
 	}
 
 	/**
@@ -107,8 +92,7 @@ public abstract class BaseReplicationBoltExecutor implements IRichBolt {
 	protected abstract void handleReplication(Tuple input, long txid);
 
 	protected void declareReplicationStream(OutputFieldsDeclarer declarer) {
-		declarer.declareStream(ReplicationSpout.REPLICATION_STREAM_ID,
-				new Fields(ReplicationSpout.REPLICATION_FLELD_ID));
+		declarer.declareStream(REPLICATION_STREAM_ID, new Fields(REPLICATION_FLELD_ID));
 	}
 
 	protected static class AnchoringOutputCollector extends OutputCollector {

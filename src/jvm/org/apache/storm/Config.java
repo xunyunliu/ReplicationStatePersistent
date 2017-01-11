@@ -2228,6 +2228,9 @@ public class Config extends HashMap<String, Object> {
     @isString
     public static final Object CLIENT_JAR_TRANSFORMER = "client.jartransformer.class";
 
+    @isInteger
+	public static final Object TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
+
     public static void setClasspath(Map conf, String cp) {
         conf.put(Config.TOPOLOGY_CLASSPATH, cp);
     }

@@ -1,13 +1,8 @@
 package org.apache.storm.topology;
 
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
+import org.apache.storm.Config;
 import org.apache.storm.state.State;
 import org.apache.storm.state.StateFactory;
 import org.apache.storm.task.OutputCollector;
@@ -19,111 +14,83 @@ import org.slf4j.LoggerFactory;
 public class ReplicationStatefulBoltExecutor<T extends State> extends BaseReplicationBoltExecutor {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ReplicationStatefulBoltExecutor.class);
-	private final IStatefulBolt<T> bolt;
-	private State state;
-	private boolean boltInitialized = false;
-	private List<Tuple> pendingTuples = new ArrayList<>();
-	private List<Tuple> preparedTuples = new ArrayList<>();
-	private AckTrackingOutputCollector collector;
+	private final IStatefulBolt<T> _bolt;
+	private State _state;
+	private AnchoringOutputCollector _collector;
+	private boolean _boltInitialized = false;
+	private int _numTasks;
+	private int _numReplications;
+	private int _realTaskID;
 
 	public ReplicationStatefulBoltExecutor(IStatefulBolt<T> bolt) {
-		this.bolt = bolt;
+		_bolt = bolt;
 	}
 
-	@Override
+	private int getNumTasks(TopologyContext context) {
+		return context.getComponentTasks(context.getThisComponentId()).size();
+	}
+
+	private int loadNumReplications(Map stormConf) {
+		int numReplications = 0;
+		if (stormConf.containsKey(Config.TOPOLOGY_NUMREPLICATIONS)) {
+			numReplications = ((Number) stormConf.get(Config.TOPOLOGY_NUMREPLICATIONS)).intValue();
+		}
+		// ensure checkpoint interval is not less than a sane low value.
+		numReplications = Math.max(1, numReplications);
+		LOG.info("The global number of replications is {} .", numReplications);
+		return numReplications;
+	}
+
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
-		String namespace = context.getThisComponentId() + "-" + context.getThisTaskId();
-		prepare(stormConf, context, collector, StateFactory.getState(namespace, stormConf, context));
-	}
-
-	private void prepare(Map stormConf, TopologyContext context, OutputCollector collector, State state) {
 		init(context, collector);
-		this.collector = new AckTrackingOutputCollector(collector);
-		bolt.prepare(stormConf, context, this.collector);
-		this.state = state;
+		this._collector = new AnchoringOutputCollector(collector);
+		_bolt.prepare(stormConf, context, this._collector);
+		
+		this._numTasks = getNumTasks(context);
+		this._numReplications = loadNumReplications(stormConf);
+		if (_numTasks % _numReplications != 0) {
+			throw new IllegalArgumentException("The number of tasks must be a multiple of the number of Replications!");
+		}
+		this._realTaskID = context.getThisTaskIndex() / _numReplications;
+
+		String namespace = context.getThisComponentId() + "-" + this._realTaskID;
+		this._state = StateFactory.getState(namespace, stormConf, context);
 	}
 
 	@Override
 	public void cleanup() {
-		bolt.cleanup();
+		_bolt.cleanup();
 	}
 
 	@Override
 	public void declareOutputFields(OutputFieldsDeclarer declarer) {
-		bolt.declareOutputFields(declarer);
+		_bolt.declareOutputFields(declarer);
 		declareReplicationStream(declarer);
 
 	}
 
 	@Override
 	public Map<String, Object> getComponentConfiguration() {
-		return bolt.getComponentConfiguration();
+		return _bolt.getComponentConfiguration();
 	}
 
 	@Override
 	protected void handleTuple(Tuple input) {
-		if (boltInitialized) {
-			doExecute(input);
-		} else {
-			LOG.debug("Bolt state not initialized, adding tuple {} to pending tuples", input);
-			pendingTuples.add(input);
-		}
-	}
-
-	private void doExecute(Tuple tuple) {
-		bolt.execute(tuple);
-	}
-
-	private void ack(List<Tuple> tuples) {
-		if (!tuples.isEmpty()) {
-			LOG.debug("Acking {} tuples", tuples.size());
-			for (Tuple tuple : tuples) {
-				collector.delegate.ack(tuple);
-			}
-			tuples.clear();
-		}
-	}
-
-	private void fail(List<Tuple> tuples) {
-		if (!tuples.isEmpty()) {
-			LOG.debug("Failing {} tuples", tuples.size());
-			for (Tuple tuple : tuples) {
-				collector.fail(tuple);
-			}
-			tuples.clear();
-		}
+		_bolt.execute(input);
 	}
 
 	@Override
 	protected void handleReplication(Tuple input, long txid) {
-		// TODO Auto-generated method stub
+		LOG.debug("handle Replication with txid {}", txid);
+
+		/*
+		 * May be the task restarted in the middle and the state needs be
+		 * initialized. Fail fast and trigger recovery.
+		 */
+		LOG.debug("Failing replicationTuple, the bolt state is not properly initialized.");
+		_collector.fail(input);
+		return;
 
 	}
-	
-	 private static class AckTrackingOutputCollector extends AnchoringOutputCollector {
-	        private final OutputCollector delegate;
-	        private final Queue<Tuple> ackedTuples;
-
-	        AckTrackingOutputCollector(OutputCollector delegate) {
-	            super(delegate);
-	            this.delegate = delegate;
-	            this.ackedTuples = new ConcurrentLinkedQueue<>();
-	        }
-
-	        List<Tuple> ackedTuples() {
-	            List<Tuple> result = new ArrayList<>();
-	            Iterator<Tuple> it = ackedTuples.iterator();
-	            while(it.hasNext()) {
-	                result.add(it.next());
-	                it.remove();
-	            }
-	            return result;
-	        }
-
-	        @Override
-	        public void ack(Tuple input) {
-	            ackedTuples.add(input);
-	        }
-	    }
 
 }
