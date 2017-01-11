@@ -40,10 +40,16 @@ public class ReplicationSpout extends BaseSignalSpout {
 	private SpoutOutputCollector _collector;
 	private int _sleepInterval;
 
+	
 	public ReplicationSpout(String name) {
 		super(name);
 	}
-
+	
+	public ReplicationSpout()
+	{
+		super(REPLICATION_COMPONENT_ID);
+	}
+	
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
