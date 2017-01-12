@@ -2228,8 +2228,8 @@ public class Config extends HashMap<String, Object> {
     @isString
     public static final Object CLIENT_JAR_TRANSFORMER = "client.jartransformer.class";
 
-    @isInteger
-	public static final Object TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
+//    @isInteger
+//	public static final Object TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
 
     @isString
 	public static final Object REDIS_PROVIDER = "redis.provider";

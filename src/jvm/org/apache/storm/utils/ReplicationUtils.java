@@ -5,7 +5,7 @@ import java.util.Map;
 public class ReplicationUtils {
 	public final static String TOPO_START_TIME = "topo-start-time";
 	public final static int TOPO_INITIALIZATION_TIME = 20;
-	public final static int TOPO_RECOVERY_TIMEOUT = 300;
+	public final static String TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
 
 	@SuppressWarnings("rawtypes")
 	public static long getTopologyUpTime(Map Stormconf) {

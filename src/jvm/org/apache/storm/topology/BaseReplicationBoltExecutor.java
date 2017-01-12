@@ -30,6 +30,8 @@ public abstract class BaseReplicationBoltExecutor implements IRichBolt {
 	private static final Logger LOG = LoggerFactory.getLogger(BaseReplicationBoltExecutor.class);
 	private Set<Long> _transactionProcessed;
 	protected OutputCollector _collector;
+	
+
 
 	public BaseReplicationBoltExecutor() {
 		_transactionProcessed = new HashSet<Long>();
@@ -93,6 +95,11 @@ public abstract class BaseReplicationBoltExecutor implements IRichBolt {
 
 	protected void declareReplicationStream(OutputFieldsDeclarer declarer) {
 		declarer.declareStream(REPLICATION_STREAM_ID, new Fields(REPLICATION_FLELD_ID));
+	}
+	
+	protected void addTransactionProcessed(long txid)
+	{
+		_transactionProcessed.add(txid);
 	}
 
 	protected static class AnchoringOutputCollector extends OutputCollector {

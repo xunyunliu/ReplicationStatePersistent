@@ -2,6 +2,7 @@ package org.apache.storm.topology;
 
 import java.util.Map;
 
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.storm.Config;
 import org.apache.storm.replication.state.RepState;
 import org.apache.storm.replication.state.RepStateFactory;
@@ -10,6 +11,7 @@ import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.ReplicationUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +21,7 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	private final IRepStatefulBolt<T> _bolt;
 	private RepState _state;
 	private AnchoringOutputCollector _collector;
+	
 	private int _numTasks;
 	private int _numReplications;
 	private int _realTaskID;
@@ -26,8 +29,6 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	public ReplicationStatefulBoltExecutor(IRepStatefulBolt<T> bolt) {
 		_bolt = bolt;
 	}
-
-
 
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		init(context, collector);
@@ -43,6 +44,7 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 
 		String namespace = context.getThisComponentId() + "-" + this._realTaskID;
 		this._state = RepStateFactory.getState(namespace, stormConf, context);
+		_bolt.initState((T)_state);
 	}
 
 	@Override
@@ -82,11 +84,11 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 
 	private int loadNumReplications(Map stormConf) {
 		int numReplications = 0;
-		if (stormConf.containsKey(Config.TOPOLOGY_NUMREPLICATIONS)) {
-			numReplications = ((Number) stormConf.get(Config.TOPOLOGY_NUMREPLICATIONS)).intValue();
+		if (stormConf.containsKey(ReplicationUtils.TOPOLOGY_NUMREPLICATIONS)) {
+			numReplications = ((Number) stormConf.get(ReplicationUtils.TOPOLOGY_NUMREPLICATIONS)).intValue();
 		}
 		numReplications = Math.max(1, numReplications);
-		LOG.info("The global number of replications is {} .", numReplications);
+		LOG.info("The global number of replications is {}.", numReplications);
 		return numReplications;
 	}
 	

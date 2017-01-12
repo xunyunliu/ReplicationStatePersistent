@@ -40,16 +40,14 @@ public class ReplicationSpout extends BaseSignalSpout {
 	private SpoutOutputCollector _collector;
 	private int _sleepInterval;
 
-	
 	public ReplicationSpout(String name) {
 		super(name);
 	}
-	
-	public ReplicationSpout()
-	{
+
+	public ReplicationSpout() {
 		super(REPLICATION_COMPONENT_ID);
 	}
-	
+
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
@@ -64,7 +62,7 @@ public class ReplicationSpout extends BaseSignalSpout {
 
 	@Override
 	public void ack(Object msgId) {
-		LOG.info("Ack received, replication singal {} has been fully processed.", _curReplicationTxID);
+		LOG.info("Ack received, replication signal {} has been fully processed.", _curReplicationTxID);
 		_curReplicationTxID = 0;
 	}
 
@@ -77,7 +75,8 @@ public class ReplicationSpout extends BaseSignalSpout {
 	public void onSignal(byte[] data) {
 		LOG.info("Received replication signal: " + new String(data));
 		if (_curReplicationTxID != 0)
-			LOG.info("There is an existing signal {} waiting to be processed by the topology. New signal is ignored",
+			LOG.info(
+					"There is an existing signal {} waiting to be processed by the topology. The incoming signal is ignored",
 					_curReplicationTxID);
 
 		try {
@@ -120,7 +119,7 @@ public class ReplicationSpout extends BaseSignalSpout {
 	}
 
 	public static boolean isReplication(Tuple input) {
-		return REPLICATION_STREAM_ID.equals(input.getSourceGlobalStreamId());
+		return REPLICATION_STREAM_ID.equals(input.getSourceStreamId());
 	}
 
 }
