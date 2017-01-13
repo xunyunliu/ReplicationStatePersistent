@@ -4,6 +4,7 @@ import java.util.Map;
 
 public class ReplicationUtils {
 	public final static String TOPO_START_TIME = "topo-start-time";
+	public final static String LOCK_NAMESPACE = "lock-namespace";
 	public final static int TOPO_INITIALIZATION_TIME = 20;
 	public final static String TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
 
