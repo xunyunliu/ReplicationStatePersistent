@@ -20,6 +20,7 @@ import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.ReplicationUtils;
 import org.apache.storm.utils.Utils;
 import org.apache.zookeeper.data.Stat;
+import org.eclipse.jetty.util.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,14 +30,16 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	private final IRepStatefulBolt<T> _bolt;
 	private RepState _state;
 	private AnchoringOutputCollector _collector;
-	private Map _stormConf;
 
 	private int _numTasks;
 	private int _numReplications;
 	private int _realTaskID;
-	private String _componentName;
+	private String _lockString;
 
 	private static CuratorFramework _client;
+	private static String _connectString;
+	private static int _retryCount;
+	private static int _retryInterval;
 
 	public ReplicationStatefulBoltExecutor(IRepStatefulBolt<T> bolt) {
 		_bolt = bolt;
@@ -45,19 +48,42 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		init(context, collector);
 		this._collector = new AnchoringOutputCollector(collector);
+		prepareMememberVariables( stormConf,  context);
 		_bolt.prepare(stormConf, context, this._collector);
-		this._stormConf = stormConf;
-		this._componentName = context.getThisComponentId();
+		_bolt.initState((T) _state);
+	}
+
+	private void prepareMememberVariables(Map stormConf, TopologyContext context) {
+		ReplicationStatefulBoltExecutor._connectString = zkHosts(stormConf);
+		ReplicationStatefulBoltExecutor._retryCount = Utils.getInt(stormConf.get("storm.zookeeper.retry.times"));
+		ReplicationStatefulBoltExecutor._retryInterval = Utils.getInt(stormConf.get("storm.zookeeper.retry.interval"));
 		this._numTasks = getNumTasks(context);
 		this._numReplications = loadNumReplications(stormConf);
 		if (_numTasks % _numReplications != 0) {
 			throw new IllegalArgumentException("The number of tasks must be a multiple of the number of Replications!");
 		}
 		this._realTaskID = context.getThisTaskIndex() / _numReplications;
+		this._lockString = context.getThisComponentId() + "-" + this._realTaskID;
+		
+		if(context.getThisTaskIndex()%_numReplications==0)
+			initlock(_lockString);
+		
+		this._state = RepStateFactory.getState(_lockString, stormConf, context);
+	}
 
-		String namespace = context.getThisComponentId() + "-" + this._realTaskID;
-		this._state = RepStateFactory.getState(namespace, stormConf, context);
-		_bolt.initState((T) _state);
+	private void initlock(String lockString) {
+		_client=getClient();
+		try{
+			Stat stat = _client.checkExists().forPath("/" + lockString);
+			if (stat == null) {
+				String path = _client.create().creatingParentsIfNeeded().forPath("/" + lockString);
+				LOG.info("Created: " + path);
+			}
+		}catch (Exception e)
+		{
+			LOG.error("Lock initialization error.");
+			e.printStackTrace();
+		}		
 	}
 
 	@Override
@@ -86,62 +112,41 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	protected void handleReplication(Tuple input, long txid) {
 		LOG.debug("handle Replication with txid {}", txid);
 		CuratorFramework client = getClient();
-		String lockName = txid+"_"+_componentName+"_"+_realTaskID;
-		try {
-			iniClient(lockName);
-		} catch (Exception e1) {
-			
-			e1.printStackTrace();
-		}
-		InterProcessMutex sharedLock = new InterProcessMutex(client, "/" + lockName);
+		InterProcessMutex sharedLock = new InterProcessMutex(client, "/" + _lockString);
 		try {
 
-			if (sharedLock.acquire(50, TimeUnit.MILLISECONDS)) {
+			if (sharedLock.acquire(500, TimeUnit.MILLISECONDS)) {
 				// sharedLock.acquire();
 				LOG.info("{} has got the shared lock", Thread.currentThread().getName());
 				Utils.sleep(1000);
 				_state.save(txid);
 				LOG.info("{} is releasing the shared lock", Thread.currentThread().getName());
+			} else {
+				LOG.info("{} cannot get the shared lock as it has been occupied.", Thread.currentThread().getName());
 			}
 
 		} catch (Exception e) {
-			LOG.info("{} cannot get the shared lock as it has been occupied", Thread.currentThread().getName());
+			LOG.info("{} cannot get the shared lock due to errors", Thread.currentThread().getName());
+			e.printStackTrace();
 
 		} finally {
 			try {
-				LOG.info("{} has a flag {}", Thread.currentThread().getName(), sharedLock.isAcquiredInThisProcess());
 				if (sharedLock.isAcquiredInThisProcess())
 					sharedLock.release();
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-			CloseableUtils.closeQuietly(_client);
-			_client = null;
-
+			// CloseableUtils.closeQuietly(_client);
 		}
 		_collector.emit(ReplicationSpout.REPLICATION_STREAM_ID, input, new Values(txid));
 		_collector.ack(input);
 
 	}
 
-	private void iniClient(String lockName) throws Exception {
-		Stat stat = this._client.checkExists().forPath("/" + lockName);
-		if (stat == null) {
-			String path = this._client.create().creatingParentsIfNeeded()
-					.forPath("/" + lockName);
-			LOG.info("Created: " + path);
-		}
-	}
-
-	private CuratorFramework getClient() {
+	private static CuratorFramework getClient() {
 		if (_client == null) {
-
-			String connectString = zkHosts(_stormConf);
-			int retryCount = Utils.getInt(_stormConf.get("storm.zookeeper.retry.times"));
-			int retryInterval = Utils.getInt(_stormConf.get("storm.zookeeper.retry.interval"));
-
 			CuratorFramework clientinit = CuratorFrameworkFactory.builder().namespace(ReplicationUtils.LOCK_NAMESPACE)
-					.connectString(connectString).retryPolicy(new RetryNTimes(retryCount, retryInterval)).build();
+					.connectString(_connectString).retryPolicy(new RetryNTimes(_retryCount, _retryInterval)).build();
 			clientinit.start();
 			_client = clientinit;
 		}
@@ -149,7 +154,7 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 		return _client;
 	}
 
-	private String zkHosts(Map conf) {
+	private static String zkHosts(Map conf) {
 		int zkPort = Utils.getInt(conf.get("storm.zookeeper.port"));
 		List<String> zkServers = (List<String>) conf.get("storm.zookeeper.servers");
 
