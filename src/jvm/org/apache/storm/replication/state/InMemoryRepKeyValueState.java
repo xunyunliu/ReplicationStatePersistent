@@ -16,6 +16,11 @@ public class InMemoryRepKeyValueState<K, V> implements RepKeyValueState<K, V> {
 		private long txid;
 		private Map<K, V> state;
 
+		public long getTxid()
+		{
+			return txid;
+		}
+		
 		MyTxIdState(long txid, Map<K, V> state) {
 			this.txid = txid;
 			this.state = state;
@@ -59,5 +64,10 @@ public class InMemoryRepKeyValueState<K, V> implements RepKeyValueState<K, V> {
 			return "The state in memory is not initialized.";
 		else
 			return "The saved state " + _savedState;
+	}
+
+	@Override
+	public void load(long txid) {
+		LOG.info("Nothing to load, everything is in-memory.");
 	}
 }

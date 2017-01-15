@@ -11,7 +11,9 @@ public class RepStateFactory {
 
 	private static final Logger LOG = LoggerFactory.getLogger(RepStateFactory.class);
 
-	private static String DEFAULT_PROVIDER = "org.apache.storm.replication.state.InMemoryRepKeyValueStateProvider";
+	// private static String DEFAULT_PROVIDER =
+	// "org.apache.storm.replication.state.InMemoryRepKeyValueStateProvider";
+	private static String DEFAULT_PROVIDER = "org.apache.storm.replication.state.RedisRepKeyValueStateProvider";
 
 	public static RepState getState(String namespace, Map stormConf, TopologyContext context) {
 		RepState state;
