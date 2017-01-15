@@ -8,6 +8,13 @@ public class ReplicationUtils {
 	public final static int TOPO_INITIALIZATION_TIME = 20;
 	public final static String TOPOLOGY_NUMREPLICATIONS = "topology.numreplications";
 
+
+	@SuppressWarnings("rawtypes")
+	public static boolean isRecovering(Map Stormconf) {
+		return getTopologyUpTime(Stormconf) >= TOPO_INITIALIZATION_TIME ? true : false;
+	}
+	
+
 	@SuppressWarnings("rawtypes")
 	public static long getTopologyUpTime(Map Stormconf) {
 		if (!Stormconf.containsKey(TOPO_START_TIME))
@@ -18,11 +25,6 @@ public class ReplicationUtils {
 
 		return uptime;
 
-	}
-
-	@SuppressWarnings("rawtypes")
-	public static boolean isRecovering(Map Stormconf) {
-		return getTopologyUpTime(Stormconf) >= TOPO_INITIALIZATION_TIME ? true : false;
 	}
 
 }
