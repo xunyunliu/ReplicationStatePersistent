@@ -1,6 +1,7 @@
 package org.apache.storm.topology;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -28,12 +29,21 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 	private static final Logger LOG = LoggerFactory.getLogger(ReplicationStatefulBoltExecutor.class);
 	private final IRepStatefulBolt<T> _bolt;
 	private RepState _state;
-	private AnchoringOutputCollector _collector;
+	private SelectiveEmitOutputCollector _collector;
 
+	// number of replications set for this bolt
 	private int _numReplications;
-	private int _realTaskID;
-	private String _lockString;
+	// the real state id (note that replication tasks are sharing the same
+	// states)
+	private int _realStateID;
+	// the namespace used to store real state
+	private String _namespace;
+	// if this task has been initialized
 	private boolean _isInitialized = false;
+	// is this the primary task that is allowed to emit output to down streams.
+	private boolean _isPrimary = false;
+	// temporarily hold the incoming tuples when the task has not been
+	// initialized.
 	private List<Tuple> _pendingTuples = new ArrayList<>();
 
 	private static CuratorFramework _client;
@@ -47,23 +57,29 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		init(context, collector);
-		this._collector = new AnchoringOutputCollector(collector);
 		prepareMememberVariables(stormConf, context);
+		this._collector = new SelectiveEmitOutputCollector(collector, _isPrimary);
 		_bolt.prepare(stormConf, context, this._collector);
 		_bolt.initState((T) _state);
 	}
 
 	private void prepareMememberVariables(Map stormConf, TopologyContext context) {
-
 		prepareConectionConfig(stormConf);
-		this._numReplications = loadNumReplications(stormConf, context);
-		this._realTaskID = context.getThisTaskIndex() / _numReplications;
-		this._lockString = context.getThisComponentId() + "-" + this._realTaskID;
+		
+		this._numReplications = ReplicationUtils.loadNumReplications(context);
+		LOG.info("The global number of replications is {}.", _numReplications);
+		int numTasks = context.getComponentTasks(context.getThisComponentId()).size();
+		if (numTasks % _numReplications != 0) {
+			throw new IllegalArgumentException("The number of tasks must be a multiple of the number of replications!");
+		}
 
-		if (context.getThisTaskIndex() % _numReplications == 0)
-			initlock(_lockString);
-		this._state = RepStateFactory.getState(_lockString, stormConf, context);
-
+		this._realStateID = context.getThisTaskIndex() / _numReplications;
+		this._namespace = context.getThisComponentId() + "-" + this._realStateID;
+		if (context.getThisTaskIndex() % _numReplications == 0) {
+			_isPrimary = true;
+			initlock(_namespace);
+		}
+		this._state = RepStateFactory.getState(_namespace, stormConf, context);
 		if (!ReplicationUtils.isRecovering(stormConf))
 			_isInitialized = true;
 	}
@@ -128,10 +144,9 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 
 		} else {
 			// save states;
-			InterProcessMutex sharedLock = new InterProcessMutex(client, "/" + _lockString);
+			InterProcessMutex sharedLock = new InterProcessMutex(client, "/" + _namespace);
 			try {
 				if (sharedLock.acquire(50, TimeUnit.MILLISECONDS)) {
-					// sharedLock.acquire();
 					_state.save(txid);
 				} else {
 					LOG.debug("{} cannot get the shared lock as it has been occupied.",
@@ -151,7 +166,7 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 			}
 
 		}
-		_collector.emit(ReplicationSpout.REPLICATION_STREAM_ID, input, new Values(txid));
+		_collector.delegate.emit(ReplicationSpout.REPLICATION_STREAM_ID, input, new Values(txid));
 		_collector.ack(input);
 
 	}
@@ -190,19 +205,37 @@ public class ReplicationStatefulBoltExecutor<T extends RepState> extends BaseRep
 		return sb.toString();
 	}
 
-	private int loadNumReplications(Map stormConf, TopologyContext context) {
-		int numReplications = 0;
-		if (stormConf.containsKey(ReplicationUtils.TOPOLOGY_NUMREPLICATIONS)) {
-			numReplications = ((Number) stormConf.get(ReplicationUtils.TOPOLOGY_NUMREPLICATIONS)).intValue();
-		}
-		numReplications = Math.max(1, numReplications);
-		LOG.info("The global number of replications is {}.", numReplications);
-		int numTasks = context.getComponentTasks(context.getThisComponentId()).size();
-		if (numTasks % numReplications != 0) {
-			throw new IllegalArgumentException("The number of tasks must be a multiple of the number of Replications!");
+
+	private static class SelectiveEmitOutputCollector extends AnchoringOutputCollector {
+		private final OutputCollector delegate;
+		private final boolean isPrimary;
+		private static final Logger LOG = LoggerFactory.getLogger(SelectiveEmitOutputCollector.class);
+
+		SelectiveEmitOutputCollector(OutputCollector delegate, boolean isPrimary) {
+			super(delegate);
+			this.delegate = delegate;
+			this.isPrimary = isPrimary;
+
 		}
 
-		return numReplications;
+		@Override
+		public List<Integer> emit(String streamId, Collection<Tuple> anchors, List<Object> tuple) {
+			if (isPrimary)
+				return delegate.emit(streamId, anchors, tuple);
+			else {
+				return null;
+			}
+		}
+
+		@Override
+		public void emitDirect(int taskId, String streamId, Collection<Tuple> anchors, List<Object> tuple) {
+			if (isPrimary)
+				delegate.emitDirect(taskId, streamId, anchors, tuple);
+			else {
+				return;
+			}
+		}
+
 	}
 
 }

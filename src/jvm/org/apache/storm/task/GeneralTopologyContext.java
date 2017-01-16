@@ -62,6 +62,10 @@ public class GeneralTopologyContext implements JSONAware {
     public String getStormId() {
         return _stormId;
     }
+    
+    public Map getStormConf(){
+    	return _stormConf;
+    }
 
     /**
      * Gets the Thrift object representing the topology.
